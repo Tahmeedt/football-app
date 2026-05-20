@@ -1,22 +1,22 @@
 const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
+const Database = require("better-sqlite3");
 
 const app = express();
 
 app.use(express.json());
 app.use(express.static("public"));
 
-// DATABASE
-const db = new sqlite3.Database("football.db");
+// DATABASE (better-sqlite3)
+const db = new Database("football.db");
 
-// CREATE TABLE
-db.run(`
+// CREATE TABLE (run once safely)
+db.prepare(`
   CREATE TABLE IF NOT EXISTS players (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
     goals INTEGER
   )
-`);
+`).run();
 
 // ---------------------------
 // FOOTBALL API ROUTES
@@ -25,17 +25,14 @@ db.run(`
 // Get all competitions (leagues)
 app.get("/api/competitions", async (req, res) => {
     try {
-        const response = await fetch(
-            "https://api.football-data.org/v4/competitions",
-            {
-                headers: {
-                    "X-Auth-Token": "313913361b2942998b1e643b77eb6f4f"
-                }
+        const response = await fetch("https://api.football-data.org/v4/competitions", {
+            headers: {
+                "X-Auth-Token": "313913361b2942998b1e643b77eb6f4f"
             }
-        );
+        });
 
         const data = await response.json();
-        res.json(data.competitions); // IMPORTANT FIX
+        res.json(data.competitions || []);
     } catch (err) {
         res.status(500).json({ error: "Failed to fetch competitions" });
     }
@@ -44,14 +41,11 @@ app.get("/api/competitions", async (req, res) => {
 // Premier League teams
 app.get("/api/pl", async (req, res) => {
     try {
-        const response = await fetch(
-            "https://api.football-data.org/v4/competitions/PL/teams",
-            {
-                headers: {
-                    "X-Auth-Token": "313913361b2942998b1e643b77eb6f4f"
-                }
+        const response = await fetch("https://api.football-data.org/v4/competitions/PL/teams", {
+            headers: {
+                "X-Auth-Token": "313913361b2942998b1e643b77eb6f4f"
             }
-        );
+        });
 
         const data = await response.json();
         res.json(data);
@@ -60,76 +54,67 @@ app.get("/api/pl", async (req, res) => {
     }
 });
 
+// Premier League matches
 app.get("/api/plmatches", async (req, res) => {
     try {
-        const response = await fetch(
-            "https://api.football-data.org/v4/competitions/PL/matches",
-            {
-                headers: {
-                    "X-Auth-Token": "313913361b2942998b1e643b77eb6f4f"
-                }
+        const response = await fetch("https://api.football-data.org/v4/competitions/PL/matches", {
+            headers: {
+                "X-Auth-Token": "313913361b2942998b1e643b77eb6f4f"
             }
-        );
+        });
 
         const data = await response.json();
-
-        res.json(data.matches);
+        res.json(data.matches || []);
     } catch (err) {
-        res.status(500).json({
-            error: "Failed to fetch PL matches"
-        });
+        res.status(500).json({ error: "Failed to fetch PL matches" });
     }
 });
 
 // ---------------------------
-// YOUR SQLITE ROUTES
+// SQLITE ROUTES
 // ---------------------------
 
-// Get players from YOUR database
+// Get players
 app.get("/api/players", (req, res) => {
-    db.all("SELECT * FROM players", (err, rows) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
+    try {
+        const rows = db.prepare("SELECT * FROM players").all();
         res.json(rows);
-    });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// Add player to YOUR database
+// Add player
 app.post("/api/players", (req, res) => {
     let { name, goals } = req.body;
-
-    // convert goals to number
     goals = Number(goals);
 
-    // validation
     if (!name || isNaN(goals)) {
         return res.status(400).json({
             error: "Name and goals must be valid"
         });
     }
 
-    db.run(
-        "INSERT INTO players (name, goals) VALUES (?, ?)",
-        [name, goals],
-        function (err) {
-            if (err) {
-                return res.status(500).json({ error: err.message });
-            }
+    try {
+        const stmt = db.prepare("INSERT INTO players (name, goals) VALUES (?, ?)");
+        const result = stmt.run(name, goals);
 
-            res.json({
-                id: this.lastID,
-                name,
-                goals
-            });
-        }
-    );
+        res.json({
+            id: result.lastInsertRowid,
+            name,
+            goals
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // ---------------------------
 // START SERVER
 // ---------------------------
 
-app.listen(3000, () => {
-    console.log("Server running on http://localhost:3000");
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log("Server running on port " + PORT);
 });
