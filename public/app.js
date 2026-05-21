@@ -31,6 +31,13 @@ function loadLeagues() {
                 `;
 
                 body.appendChild(row);
+                row.style.cursor = "pointer";
+
+                row.onclick = () => {
+                    if (league.code === "PL") {
+                        window.location.href = "index2.html?league=PL";
+                    }
+                };
             });
         })
         .catch(err => console.error("Leagues error:", err));
